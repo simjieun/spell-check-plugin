@@ -28,7 +28,11 @@ trap '[[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"' EXIT
 DISPLAY_PATH=""
 if [[ -z "$FILE" ]]; then
   input="$(cat)"
-  if [[ "$(jq -r '.hook_event_name // empty' <<<"$input")" == "FileChanged" ]]; then
+  MODE="$(jq -r '.hook_event_name // "PreToolUse"' <<<"$input")"
+  # hook 실행 기록 — 플러그인이 실제로 돌았는지 확인용 (tail -f 로 관찰)
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [$MODE] $(jq -r '.file_path // .tool_input.file_path // "(no path)"' <<<"$input")" \
+    >> "${SPELL_CHECK_LOG_FILE:-$HOME/.claude/spell-check-plugin.log}"
+  if [[ "$MODE" == "FileChanged" ]]; then
     # FileChanged: 파일이 이미 디스크에 있으므로 경로만 꺼내 그대로 검사
     FILE="$(jq -r '.file_path // empty' <<<"$input")"
     [[ -n "$FILE" && -f "$FILE" ]] || exit 0

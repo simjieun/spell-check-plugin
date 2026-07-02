@@ -19,9 +19,10 @@ function runFile(file, env = {}) {
 }
 
 // hook 모드: stdin으로 PreToolUse JSON 전달
+const hookLog = path.join(tmp, 'hook.log');
 function runHook(toolInput, env = {}) {
   return spawnSync(script, [], {
-    env: { ...process.env, ...env },
+    env: { ...process.env, SPELL_CHECK_LOG_FILE: hookLog, ...env },
     input: JSON.stringify({ tool_name: 'Write', tool_input: toolInput }),
     encoding: 'utf8',
   });
@@ -85,11 +86,16 @@ assert.match(r.stdout, /No spelling errors found/);
 
 // 11. FileChanged hook 모드: 사용자가 에디터에서 저장한 디스크 파일을 검사해야 한다
 r = spawnSync(script, [], {
-  env: process.env,
+  env: { ...process.env, SPELL_CHECK_LOG_FILE: hookLog },
   input: JSON.stringify({ hook_event_name: 'FileChanged', file_path: writeTmp('changed.js', '// recieve the message\n') }),
   encoding: 'utf8',
 });
 assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /should be 'receive'/);
+
+// 12. hook 모드는 실행 로그를 남겨야 한다 (모드와 파일 경로 포함)
+const logContent = fs.readFileSync(hookLog, 'utf8');
+assert.match(logContent, /\[PreToolUse\] src\/api\.js/);
+assert.match(logContent, /\[FileChanged\] .*changed\.js/);
 
 console.log('all check-spelling tests passed');

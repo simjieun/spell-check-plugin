@@ -158,6 +158,15 @@ claude
 
 ## 문제 해결
 
+### Hook이 실제로 실행됐는지 확인
+hook이 트리거될 때마다 실행 로그가 남습니다:
+```bash
+tail -f ~/.claude/spell-check-plugin.log
+# 2026-07-02 14:30:12 [PreToolUse] src/api.ts
+# 2026-07-02 14:31:05 [FileChanged] src/constants.ts
+```
+경로를 바꾸려면 `SPELL_CHECK_LOG_FILE` 환경 변수를 설정하세요.
+
 ### Hook이 실행되지 않음
 ```bash
 # Hook 파일 권한 확인
