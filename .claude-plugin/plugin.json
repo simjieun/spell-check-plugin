@@ -1,0 +1,12 @@
+{
+  "name": "spell-check",
+  "version": "1.0.0",
+  "description": "Detects English spelling errors in code identifiers, constant keys, string literals, and comments",
+  "author": {
+    "name": "Encar"
+  },
+  "keywords": ["spelling", "typo", "validation", "code-quality"],
+  "homepage": "https://github.com/simjieun/spell-check-plugin",
+  "repository": "https://github.com/simjieun/spell-check-plugin",
+  "license": "MIT"
+}
