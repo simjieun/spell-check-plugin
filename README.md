@@ -87,15 +87,9 @@ Apply changes? (y/n): y
 ```
 
 ### 3. 허용 단어 추가
-오탐지된 단어는 `.spell-check-ignore`에 추가하면 다시 잡지 않습니다:
-```bash
-# Claude Code 안에서
-/spell-check --add-word MyTerm
-
-# 또는 터미널에서 (중복은 자동으로 건너뜀)
-scripts/add-ignore-word.sh MyTerm AnotherTerm
-```
-팀 전체가 공유하려면 추가한 단어를 이 repo에 PR로 올려주세요 — 각자 설치된 플러그인의 목록은 로컬에만 반영됩니다.
+오탐지된 단어는 `.spell-check-ignore`에 한 줄씩 추가하면 다시 잡지 않습니다 (형식은 파일 상단 주석 참고).
+목록은 이 repo에서 팀 공통으로 관리하므로, **단어 추가는 이 repo에 PR로 올려주세요** —
+각자 설치된 플러그인의 파일을 직접 고치면 본인에게만 반영되고 업데이트 시 덮어써집니다.
 
 ---
 
@@ -174,13 +168,8 @@ chmod +x scripts/check-spelling.sh
 ```
 
 ### 오탐지가 많음
-```bash
-# .spell-check-ignore에 단어 추가
-echo "MyTerm" >> .spell-check-ignore
-
-# 또는 Strict 모드 비활성화
-unset SPELL_CHECK_STRICT
-```
+- `.spell-check-ignore`에 단어를 추가하는 PR을 이 repo에 올려주세요
+- 또는 Strict 모드 비활성화: `unset SPELL_CHECK_STRICT`
 
 ---
 
