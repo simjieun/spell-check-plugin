@@ -1,6 +1,7 @@
 # 팀 배포 체크리스트
 
 ## 1. 플러그인 검증 ✅
+- [ ] **plugin.json과 marketplace.json의 version 범프** — 버전이 그대로면 팀원이 업데이트해도 설치된 캐시가 갱신되지 않음
 - [ ] `claude plugin validate` 통과
 - [ ] 모든 파일 경로 확인 (.claude-plugin/ 안에 plugin.json만)
 - [ ] hooks/hooks.json 문법 확인
