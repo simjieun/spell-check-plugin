@@ -83,4 +83,13 @@ r = runFile(writeTmp('code-only.js', 'const msg = "recieve the data";\n'));
 assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /No spelling errors found/);
 
+// 11. FileChanged hook 모드: 사용자가 에디터에서 저장한 디스크 파일을 검사해야 한다
+r = spawnSync(script, [], {
+  env: process.env,
+  input: JSON.stringify({ hook_event_name: 'FileChanged', file_path: writeTmp('changed.js', '// recieve the message\n') }),
+  encoding: 'utf8',
+});
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /should be 'receive'/);
+
 console.log('all check-spelling tests passed');

@@ -12,6 +12,19 @@
           }
         ]
       }
+    ],
+    "FileChanged": [
+      {
+        "matcher": ".ts|.tsx|.js|.jsx|.md|.json",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/check-spelling.sh",
+            "timeout": 30,
+            "statusMessage": "Checking spelling..."
+          }
+        ]
+      }
     ]
   }
 }
