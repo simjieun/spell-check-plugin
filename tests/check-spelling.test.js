@@ -45,23 +45,24 @@ r = runFile(writeTmp('ignored.js', '// dont forget to check this\n'));
 assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /No spelling errors found/);
 
-// 3. strict 모드: 오타 발견 시 exit 2로 저장 차단, stderr로 Claude에게 전달
-r = runFile(writeTmp('strict.js', '// occured yesterday\n'), { SPELL_CHECK_STRICT: 'true' });
-assert.equal(r.status, 2, `expected exit 2, got ${r.status}`);
-assert.match(r.stderr, /blocking save/);
-
-// 4. strict 모드라도 오타가 없으면 통과해야 한다
-r = runFile(writeTmp('clean.js', '// receive the message\n'), { SPELL_CHECK_STRICT: 'true' });
-assert.equal(r.status, 0, r.stderr);
-
-// 5. hook 모드(Write): stdin JSON의 content(저장될 새 내용)에서 오타를 감지해야 한다
+// 3. PostToolUse 모드(Write): 오타 발견 시 exit 2 + stderr로 Claude에게 피드백 (저장 차단 아님)
 r = runHook({ file_path: 'src/api.js', content: '// recieve the data' });
-assert.equal(r.status, 0, r.stderr);
+assert.equal(r.status, 2, `expected exit 2, got ${r.status}`);
+assert.match(r.stderr, /not blocking/);
 assert.match(r.stdout, /should be 'receive'/);
 
-// 6. hook 모드(Edit): content 대신 new_string이 와도 검사해야 한다
-r = runHook({ file_path: 'src/api.js', new_string: '// occured yesterday' });
+// 4. PostToolUse 모드: 오타가 없으면 조용히 통과해야 한다
+r = runHook({ file_path: 'src/api.js', content: '// receive the data' });
 assert.equal(r.status, 0, r.stderr);
+
+// 5. 수동(인자) 모드는 오타가 있어도 exit 0 — 경고만 출력
+r = runFile(writeTmp('manual.js', '// occured yesterday\n'));
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /should be 'occurred'/);
+
+// 6. PostToolUse 모드(Edit): content 대신 new_string이 와도 검사해야 한다
+r = runHook({ file_path: 'src/api.js', new_string: '// occured yesterday' });
+assert.equal(r.status, 2, `expected exit 2, got ${r.status}`);
 assert.match(r.stdout, /should be 'occurred'/);
 
 // 7. hook 모드: content가 없는 JSON(다른 도구 등)은 조용히 통과해야 한다
@@ -95,7 +96,7 @@ assert.match(r.stdout, /should be 'receive'/);
 
 // 12. hook 모드는 실행 로그를 남겨야 한다 (모드와 파일 경로 포함)
 const logContent = fs.readFileSync(hookLog, 'utf8');
-assert.match(logContent, /\[PreToolUse\] src\/api\.js/);
+assert.match(logContent, /\[PostToolUse\] src\/api\.js/);
 assert.match(logContent, /\[FileChanged\] .*changed\.js/);
 
 console.log('all check-spelling tests passed');

@@ -8,7 +8,7 @@ VSCode 확장프로그램을 대체하며, Claude의 언어 모델 능력을 활
 
 ### 자동 검사 (Hook)
 - **파일 저장 시 자동 실행**: 주석, docstring, 문서에서 오타 감지
-- **비침투적**: 오류 발견해도 저장은 진행 (Strict 모드는 선택사항)
+- **비침투적**: 저장이 끝난 뒤 검사하므로 절대 저장을 막지 않음 — 오타는 Claude에게 피드백되어 자동 교정
 - **빠른 피드백**: 저장 직후 터미널에 결과 표시
 
 ### 수동 검사 (Skill)
@@ -95,23 +95,21 @@ Apply changes? (y/n): y
 
 ## 동작 순서도 (Hook 자동 검사)
 
+검사는 항상 **저장이 끝난 뒤** 실행됩니다 — 오타가 있어도 저장을 막지 않습니다.
+
 ```mermaid
 flowchart TD
-    A[Claude가 Write/Edit 도구 호출] --> B[PreToolUse hook 발동<br/>check-spelling.sh 실행]
-    B --> C{인자 있음?}
-    C -->|있음: 수동/테스트 모드| D[디스크의 파일을 검사 대상으로]
-    C -->|없음: hook 모드| E[stdin JSON에서<br/>file_path + 저장될 내용 추출<br/>→ 임시 파일 생성]
-    D --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외}
-    E --> F
-    F -->|아니오| G[exit 0 — 통과]
+    A1[Claude가 파일 저장<br/>PostToolUse: Write·Edit] --> B[check-spelling.sh 실행]
+    A2[사용자가 에디터에서 저장<br/>FileChanged] --> B
+    B --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외}
+    F -->|아니오| G[exit 0 — 종료]
     F -->|예| H[영어 텍스트 추출<br/>md: 전체<br/>js/ts: 주석 라인만]
     H --> I[.spell-check-ignore<br/>허용 단어 로드]
     I --> J[오타 패턴과 대조<br/>recieve, occured, dont 등<br/>단어 경계 기준]
     J --> K{오타 발견?}
-    K -->|없음| L[✅ No spelling errors<br/>exit 0 — 저장 진행]
-    K -->|있음| M{SPELL_CHECK_STRICT<br/>= true?}
-    M -->|아니오: 기본| N[⚠️ 경고만 출력<br/>exit 0 — 저장 진행]
-    M -->|예| O[❌ exit 2 — 저장 차단<br/>stderr로 Claude에게 오류 전달<br/>→ Claude가 수정 후 재시도]
+    K -->|없음| L[✅ No spelling errors<br/>exit 0]
+    K -->|있음, PostToolUse| M[⚠️ exit 2 — stderr로 Claude에게 전달<br/>저장은 이미 완료, Claude가 스스로 교정]
+    K -->|있음, FileChanged| N[⚠️ 경고만 출력 — exit 0]
 ```
 
 ---
@@ -130,13 +128,6 @@ flowchart TD
 ---
 
 ## 설정
-
-### 환경 변수
-```bash
-# Strict 모드 (오타 발견 시 저장 차단)
-export SPELL_CHECK_STRICT=true
-claude
-```
 
 ### 플러그인 비활성화
 ```bash
@@ -162,7 +153,7 @@ claude
 hook이 트리거될 때마다 실행 로그가 남습니다:
 ```bash
 tail -f ~/.claude/spell-check-plugin.log
-# 2026-07-02 14:30:12 [PreToolUse] src/api.ts
+# 2026-07-02 14:30:12 [PostToolUse] src/api.ts
 # 2026-07-02 14:31:05 [FileChanged] src/constants.ts
 ```
 경로를 바꾸려면 `SPELL_CHECK_LOG_FILE` 환경 변수를 설정하세요.
@@ -178,7 +169,6 @@ chmod +x scripts/check-spelling.sh
 
 ### 오탐지가 많음
 - `.spell-check-ignore`에 단어를 추가하는 PR을 이 repo에 올려주세요
-- 또는 Strict 모드 비활성화: `unset SPELL_CHECK_STRICT`
 
 ---
 

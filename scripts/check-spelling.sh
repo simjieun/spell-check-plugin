@@ -3,23 +3,21 @@
 # env로 실행해 $PATH의 최신 bash(Homebrew 등)를 사용하도록 함.
 set -euo pipefail
 
-# spell-check hook (PreToolUse: Write|Edit)
-# 파일이 저장되기 전에 영어 오타를 검사합니다
+# spell-check hook — 저장을 막지 않고 사후에 알려줍니다
 # 프로젝트에서 허용하는 단어는 루트의 .spell-check-ignore (한 줄에 한 단어)에서 가져옵니다
 #
 # 실행 모드 세 가지:
 #   1) 인자 모드:  check-spelling.sh <파일경로>  — 수동 실행/테스트용, 디스크의 파일을 검사
-#   2) PreToolUse hook 모드: stdin JSON에서 저장될 새 내용(tool_input.content / new_string)을
-#      꺼내 검사 (디스크의 옛 내용이 아님)
+#   2) PostToolUse hook 모드: Claude가 저장한 직후 — stdin JSON의 저장된 내용
+#      (tool_input.content / new_string)을 검사하고, 오타가 있으면 exit 2 + stderr로
+#      Claude에게 피드백 (저장은 이미 완료됨 — 차단 아님, Claude가 다음 수정에서 교정)
 #   3) FileChanged hook 모드: 사용자가 에디터에서 저장하는 등 디스크의 파일이 변경된 뒤 —
-#      stdin JSON의 file_path로 디스크 파일을 그대로 검사
+#      stdin JSON의 file_path로 디스크 파일을 검사, 경고만 출력
 
 FILE="${1:-}"
+MODE="manual"
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IGNORE_FILE="${PLUGIN_DIR}/.spell-check-ignore"
-
-# 기본 설정
-STRICT_MODE="${SPELL_CHECK_STRICT:-false}"
 
 TMP_DIR=""
 trap '[[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"' EXIT
@@ -28,7 +26,7 @@ trap '[[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"' EXIT
 DISPLAY_PATH=""
 if [[ -z "$FILE" ]]; then
   input="$(cat)"
-  MODE="$(jq -r '.hook_event_name // "PreToolUse"' <<<"$input")"
+  MODE="$(jq -r '.hook_event_name // "PostToolUse"' <<<"$input")"
   # hook 실행 기록 — 플러그인이 실제로 돌았는지 확인용 (tail -f 로 관찰)
   echo "$(date '+%Y-%m-%d %H:%M:%S') [$MODE] $(jq -r '.file_path // .tool_input.file_path // "(no path)"' <<<"$input")" \
     >> "${SPELL_CHECK_LOG_FILE:-$HOME/.claude/spell-check-plugin.log}"
@@ -172,9 +170,10 @@ main() {
   echo "$issues"
   echo "⚠️  Found $error_count potential spelling issues"
 
-  if [[ "$STRICT_MODE" == "true" ]]; then
-    # PreToolUse에서 exit 2 = 도구 실행 차단, stderr가 Claude에게 전달됨
-    echo "❌ Strict mode: spelling issue(s) in $DISPLAY_PATH - blocking save. Fix and retry:" >&2
+  if [[ "$MODE" == "PostToolUse" ]]; then
+    # PostToolUse에서 exit 2 = 저장은 이미 완료된 상태에서 stderr만 Claude에게 전달됨
+    # → Claude가 오타를 인지하고 다음 수정에서 스스로 교정
+    echo "⚠️ spelling issue(s) in $DISPLAY_PATH (already saved - not blocking). Consider fixing:" >&2
     echo "$issues" >&2
     exit 2
   fi

@@ -81,7 +81,7 @@ File: src/constants.ts
 ## Team Integration
 
 이 스킬은:
-- 모든 파일 저장 시 `PreToolUse`(Write|Edit) hook과 함께 실행 (hooks/hooks.json 참고)
+- 파일 저장 직후 `PostToolUse`(Write|Edit)·`FileChanged` hook으로 자동 검사 — 저장을 막지 않음 (hooks/hooks.json 참고)
 - `/spell-check --fix` 로 인터랙티브 수정 가능
 - 팀 표준 단어 리스트 (.spell-check-ignore) 지원
 
