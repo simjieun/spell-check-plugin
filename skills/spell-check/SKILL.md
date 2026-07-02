@@ -47,7 +47,16 @@ allowed-tools: [Read, Bash, Write]
 
 # 자동 수정 (interactive)
 /spell-check --fix
+
+# 허용 단어 추가 (오탐지된 단어를 다시 잡지 않게)
+/spell-check --add-word myterm anotherterm
 ```
+
+## 허용 단어 추가 (--add-word)
+
+`--add-word <단어>...`가 요청되면 `scripts/add-ignore-word.sh <단어>...`를 실행합니다.
+중복(대소문자 무시)은 스크립트가 알아서 건너뛰므로 사전 확인 없이 실행하면 됩니다.
+검사 결과를 보고할 때 오탐지로 보이는 단어가 있으면 이 명령을 안내합니다.
 
 ## Output Format
 

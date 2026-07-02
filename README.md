@@ -86,11 +86,16 @@ Claude가 제안하는 수정:
 Apply changes? (y/n): y
 ```
 
-### 3. 무시 목록 커스터마이즈
-허용할 단어가 생기면 `.spell-check-ignore`에 한 줄씩 추가하면 됩니다 (형식은 파일 상단 주석 참고):
+### 3. 허용 단어 추가
+오탐지된 단어는 `.spell-check-ignore`에 추가하면 다시 잡지 않습니다:
 ```bash
-echo "MyTerm" >> .spell-check-ignore
+# Claude Code 안에서
+/spell-check --add-word MyTerm
+
+# 또는 터미널에서 (중복은 자동으로 건너뜀)
+scripts/add-ignore-word.sh MyTerm AnotherTerm
 ```
+팀 전체가 공유하려면 추가한 단어를 이 repo에 PR로 올려주세요 — 각자 설치된 플러그인의 목록은 로컬에만 반영됩니다.
 
 ---
 

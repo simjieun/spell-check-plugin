@@ -83,4 +83,34 @@ r = runFile(writeTmp('code-only.js', 'const msg = "recieve the data";\n'));
 assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /No spelling errors found/);
 
+// --- add-ignore-word.sh ---
+const addScript = path.join(root, 'scripts', 'add-ignore-word.sh');
+const ignoreFile = path.join(tmp, 'ignore.txt');
+fs.writeFileSync(ignoreFile, '# comment\nexisting\n');
+
+function runAdd(args) {
+  return spawnSync(addScript, args, {
+    env: { ...process.env, SPELL_CHECK_IGNORE_FILE: ignoreFile },
+    encoding: 'utf8',
+  });
+}
+
+// 11. 새 단어가 목록에 추가되어야 한다
+r = runAdd(['newword']);
+assert.equal(r.status, 0, r.stderr);
+assert.match(fs.readFileSync(ignoreFile, 'utf8'), /^newword$/m);
+
+// 12. 이미 있는 단어는 대소문자가 달라도 다시 추가되지 않아야 한다
+r = runAdd(['EXISTING']);
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /already in list/);
+assert.equal(fs.readFileSync(ignoreFile, 'utf8').match(/existing/gi).length, 1);
+
+// 13. 공백 등 형식에 맞지 않는 입력은 추가하지 않고 건너뛰어야 한다
+r = runAdd(['bad word', 'goodword']);
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stderr, /skipped/);
+assert.doesNotMatch(fs.readFileSync(ignoreFile, 'utf8'), /bad word/);
+assert.match(fs.readFileSync(ignoreFile, 'utf8'), /^goodword$/m);
+
 console.log('all check-spelling tests passed');
