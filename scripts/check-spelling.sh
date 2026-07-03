@@ -75,22 +75,6 @@ should_check_file() {
   esac
 }
 
-# 파일에서 영어 단어 추출
-extract_english_text() {
-  local file="$1"
-
-  case "$file" in
-    *.md)
-      cat "$file"
-      ;;
-    *.js|*.jsx|*.ts|*.tsx)
-      # 주석 라인만 추출 (// 또는 * 로 시작하는 라인)
-      grep -E '^[[:space:]]*(//|\*|/\*)' "$file" | \
-        sed -E 's#^[[:space:]]*(//|/\*|\*)[[:space:]]*##'
-      ;;
-  esac
-}
-
 # .spell-check-ignore에서 허용 단어 목록 로드 (# 주석과 빈 줄은 무시)
 load_ignore_words() {
   local ignore_file="$1"
@@ -123,28 +107,29 @@ check_spelling() {
     ["wont"]="won't"
   )
 
-  local content
-  content=$(extract_english_text "$file")
+  # 토큰화: camelCase/PascalCase 경계와 snake_case의 _ 에 공백을 삽입해
+  # 식별자 내부 단어(getSeperator → get Seperator)도 단어 경계 grep에 걸리게 함.
+  # 공백만 삽입하므로 라인 번호는 원본과 동일하게 유지됨.
+  local tokenized
+  tokenized="$(sed -E 's/([a-z0-9])([A-Z])/\1 \2/g; s/([A-Z])([A-Z][a-z])/\1 \2/g; s/_/ /g' "$file")"
 
-  # 각 오류 패턴 검사
+  # 각 오류 패턴 검사 (파일 전체 소스 대상, 단어 경계 기준)
   for error in "${!common_errors[@]}"; do
     correct="${common_errors[$error]}"
 
-    # 단어 경계를 고려한 검사
-    if echo "$content" | grep -iw "$error" >/dev/null 2>&1; then
-      local line_num
-      line_num=$(grep -in "\b$error\b" "$file" | cut -d: -f1 | head -1)
+    local line_num
+    line_num=$(grep -inw "$error" <<<"$tokenized" | cut -d: -f1 | head -1)
+    [[ -n "$line_num" ]] || continue
 
-      # ignore 목록 확인 (.spell-check-ignore)
-      local should_ignore=false
-      for ignore_word in "${ignore_words[@]}"; do
-        [[ "${error,,}" == "${ignore_word,,}" ]] && should_ignore=true && break
-      done
+    # ignore 목록 확인 (.spell-check-ignore)
+    local should_ignore=false
+    for ignore_word in "${ignore_words[@]}"; do
+      [[ "${error,,}" == "${ignore_word,,}" ]] && should_ignore=true && break
+    done
 
-      if [[ "$should_ignore" == false ]]; then
-        echo "  Line $line_num: '$error' → should be '$correct'"
-        ((errors++))
-      fi
+    if [[ "$should_ignore" == false ]]; then
+      echo "  Line $line_num: '$error' → should be '$correct'"
+      ((errors++))
     fi
   done
 

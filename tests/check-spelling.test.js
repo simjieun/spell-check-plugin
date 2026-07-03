@@ -80,10 +80,17 @@ r = runHook({ file_path: 'node_modules/pkg/index.js', content: '// recieve the d
 assert.equal(r.status, 0, r.stderr);
 assert.equal(r.stdout, '');
 
-// 10. js 파일은 주석만 검사한다 — 코드(문자열 리터럴)의 오타는 무시해야 한다
+// 10. js 파일은 전체 소스를 검사한다 — 코드(문자열 리터럴)의 오타도 잡아야 한다
 r = runFile(writeTmp('code-only.js', 'const msg = "recieve the data";\n'));
 assert.equal(r.status, 0, r.stderr);
-assert.match(r.stdout, /No spelling errors found/);
+assert.match(r.stdout, /should be 'receive'/);
+
+// 10-1. 식별자 내부 오타도 토큰화(camelCase/snake_case 분리)로 잡아야 한다
+r = runFile(writeTmp('identifier.js', 'function getSeperator() {}\nconst dont_flag = 1;\n'));
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /should be 'separator'/);
+// dont는 .spell-check-ignore에 등록되어 있어 snake_case 분리 후에도 오탐하지 않아야 한다
+assert.doesNotMatch(r.stdout, /don't/);
 
 // 11. FileChanged hook 모드: 사용자가 에디터에서 저장한 디스크 파일을 검사해야 한다
 r = spawnSync(script, [], {

@@ -7,7 +7,7 @@ VSCode 확장프로그램을 대체하며, Claude의 언어 모델 능력을 활
 ## 기능
 
 ### 자동 검사 (Hook)
-- **파일 저장 시 자동 실행**: 주석, docstring, 문서에서 오타 감지
+- **파일 저장 시 자동 실행**: 파일 전체 소스(코드, 문자열, 주석, 문서)에서 오타 감지
 - **비침투적**: 저장이 끝난 뒤 검사하므로 절대 저장을 막지 않음 — 오타는 Claude에게 피드백되어 자동 교정
 - **빠른 피드백**: 저장 직후 터미널에 결과 표시
 
@@ -108,9 +108,10 @@ flowchart TD
     C1 --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외<br/>경로·내용 없으면 종료}
     C2 --> F
     F -->|아니오| G[exit 0 — 종료]
-    F -->|예| H[영어 텍스트 추출<br/>md: 전체<br/>js/ts: 주석 라인만]
+    F -->|예| H[파일 전체 소스 검사<br/>코드·문자열·주석 포함]
     H --> I[.spell-check-ignore<br/>허용 단어 로드]
-    I --> J[오타 패턴과 대조<br/>recieve, occured, dont 등<br/>단어 경계 기준]
+    I --> T[토큰화<br/>camelCase·snake_case를<br/>단어 단위로 분리]
+    T --> J[오타 패턴과 대조<br/>recieve, occured, dont 등<br/>단어 경계 기준]
     J --> K{오타 발견?}
     K -->|없음| L[✅ No spelling errors<br/>exit 0]
     K -->|있음, PostToolUse| M[⚠️ exit 2 — stderr로 Claude에게 전달<br/>저장은 이미 완료, Claude가 스스로 교정]
@@ -124,9 +125,10 @@ flowchart TD
 ### 즉시 감지 (기본 패턴)
 - **철자**: recieve, occured, seperator
 - **축약형**: dont, doesnt, wont, cant
+- **식별자 내부 오타**: camelCase/snake_case를 토큰화해 분리 검사 (getSeperator → seperator 감지)
 
 ### Claude 모델 활용 (더 정교함)
-- **식별자 오타**: camelCase/snake_case 분리 인식 (modifedDate → modifiedDate)
+- **목록에 없는 오타**: 패턴 목록에 없는 미등록 오타 감지 (modifedDate → modifiedDate)
 - **대소문자 일관성**: ModifiedDate vs modifiedDate 혼용 감지
 - **표기 일관성**: dataBase vs database 혼용 감지
 
@@ -184,3 +186,8 @@ MIT
 ## 기여
 
 PR 환영합니다! 팀 피드백은 저희 로드맵을 결정합니다.
+
+스크립트를 수정했다면 PR 전에 테스트를 돌려주세요:
+```bash
+node tests/check-spelling.test.js
+```
