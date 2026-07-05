@@ -18,7 +18,7 @@ function runFile(file, env = {}) {
   });
 }
 
-// hook 모드: stdin으로 PreToolUse JSON 전달
+// hook 모드: stdin으로 PostToolUse JSON 전달 (저장은 이미 완료 → 디스크 파일을 검사)
 const hookLog = path.join(tmp, 'hook.log');
 function runHook(toolInput, env = {}) {
   return spawnSync(script, [], {
@@ -46,13 +46,13 @@ assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /No spelling errors found/);
 
 // 3. PostToolUse 모드(Write): 오타 발견 시 exit 2 + stderr로 Claude에게 피드백 (저장 차단 아님)
-r = runHook({ file_path: 'src/api.js', content: '// recieve the data' });
+r = runHook({ file_path: writeTmp('hook-bad.js', '// recieve the data\n') });
 assert.equal(r.status, 2, `expected exit 2, got ${r.status}`);
 assert.match(r.stderr, /not blocking/);
 assert.match(r.stdout, /should be 'receive'/);
 
 // 4. PostToolUse 모드: 오타가 없으면 조용히 통과해야 한다
-r = runHook({ file_path: 'src/api.js', content: '// receive the data' });
+r = runHook({ file_path: writeTmp('hook-clean.js', '// receive the data\n') });
 assert.equal(r.status, 0, r.stderr);
 
 // 5. 수동(인자) 모드는 오타가 있어도 exit 0 — 경고만 출력
@@ -60,23 +60,29 @@ r = runFile(writeTmp('manual.js', '// occured yesterday\n'));
 assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /should be 'occurred'/);
 
-// 6. PostToolUse 모드(Edit): content 대신 new_string이 와도 검사해야 한다
-r = runHook({ file_path: 'src/api.js', new_string: '// occured yesterday' });
+// 6. PostToolUse 모드(Edit): 수정 조각(new_string)이 아니라 디스크의 파일 "전체"를 검사해야 한다
+//    — 수정된 부분은 깨끗해도 파일 다른 곳(3번째 줄)의 기존 오타를 잡고, 라인 번호도 실제 파일 기준
+const editedFile = writeTmp('hook-edit.js', '// clean line\n// also clean\n// occured yesterday\n');
+r = runHook({ file_path: editedFile, new_string: '// clean line' });
 assert.equal(r.status, 2, `expected exit 2, got ${r.status}`);
-assert.match(r.stdout, /should be 'occurred'/);
+assert.match(r.stdout, /Line 3: 'occured' → should be 'occurred'/);
 
-// 7. hook 모드: content가 없는 JSON(다른 도구 등)은 조용히 통과해야 한다
-r = runHook({ file_path: 'src/api.js' });
+// 7. hook 모드: file_path가 없거나 디스크에 없는 파일이면 조용히 통과해야 한다
+r = runHook({});
+assert.equal(r.status, 0, r.stderr);
+assert.equal(r.stdout, '');
+r = runHook({ file_path: path.join(tmp, 'does-not-exist.js') });
 assert.equal(r.status, 0, r.stderr);
 assert.equal(r.stdout, '');
 
 // 8. 지원하지 않는 확장자(.py)는 검사하지 않아야 한다
-r = runHook({ file_path: 'src/main.py', content: '# recieve the data' });
+r = runHook({ file_path: writeTmp('main.py', '# recieve the data\n') });
 assert.equal(r.status, 0, r.stderr);
 assert.equal(r.stdout, '');
 
 // 9. 무시 패턴 경로(node_modules)는 검사하지 않아야 한다
-r = runHook({ file_path: 'node_modules/pkg/index.js', content: '// recieve the data' });
+fs.mkdirSync(path.join(tmp, 'node_modules', 'pkg'), { recursive: true });
+r = runHook({ file_path: writeTmp(path.join('node_modules', 'pkg', 'index.js'), '// recieve the data\n') });
 assert.equal(r.status, 0, r.stderr);
 assert.equal(r.stdout, '');
 
@@ -103,7 +109,7 @@ assert.match(r.stdout, /should be 'receive'/);
 
 // 12. hook 모드는 실행 로그를 남겨야 한다 (모드와 파일 경로 포함)
 const logContent = fs.readFileSync(hookLog, 'utf8');
-assert.match(logContent, /\[PostToolUse\] src\/api\.js/);
+assert.match(logContent, /\[PostToolUse\] .*hook-bad\.js/);
 assert.match(logContent, /\[FileChanged\] .*changed\.js/);
 
 console.log('all check-spelling tests passed');

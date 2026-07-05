@@ -102,11 +102,8 @@ flowchart TD
     A1[Claude가 파일 저장<br/>PostToolUse: Write·Edit] --> B[check-spelling.sh 실행]
     A2[사용자가 에디터에서 저장<br/>FileChanged: ts/js/md/json] --> B
     B --> LOG[실행 로그 기록<br/>~/.claude/spell-check-plugin.log]
-    LOG --> S{hook 모드}
-    S -->|PostToolUse| C1[stdin JSON에서 저장된 내용 추출<br/>content·new_string → 임시 파일 검사]
-    S -->|FileChanged| C2[stdin JSON의 file_path로<br/>디스크 파일 그대로 검사]
-    C1 --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외<br/>경로·내용 없으면 종료}
-    C2 --> F
+    LOG --> C[stdin JSON의 file_path로<br/>디스크 파일 전체를 검사<br/>PostToolUse도 Edit 조각이 아닌 파일 전체]
+    C --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외<br/>경로 없거나 파일 없으면 종료}
     F -->|아니오| G[exit 0 — 종료]
     F -->|예| H[파일 전체 소스 검사<br/>코드·문자열·주석 포함]
     H --> I[.spell-check-ignore<br/>허용 단어 로드]

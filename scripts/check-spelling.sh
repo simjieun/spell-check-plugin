@@ -8,9 +8,9 @@ set -euo pipefail
 #
 # 실행 모드 세 가지:
 #   1) 인자 모드:  check-spelling.sh <파일경로>  — 수동 실행/테스트용, 디스크의 파일을 검사
-#   2) PostToolUse hook 모드: Claude가 저장한 직후 — stdin JSON의 저장된 내용
-#      (tool_input.content / new_string)을 검사하고, 오타가 있으면 exit 2 + stderr로
-#      Claude에게 피드백 (저장은 이미 완료됨 — 차단 아님, Claude가 다음 수정에서 교정)
+#   2) PostToolUse hook 모드: Claude가 Write/Edit로 저장한 직후 — 저장은 이미 완료됐으므로
+#      stdin JSON의 tool_input.file_path로 디스크의 파일 "전체"를 검사하고, 오타가 있으면
+#      exit 2 + stderr로 Claude에게 피드백 (차단 아님, Claude가 다음 수정에서 교정)
 #   3) FileChanged hook 모드: 사용자가 에디터에서 저장하는 등 디스크의 파일이 변경된 뒤 —
 #      stdin JSON의 file_path로 디스크 파일을 검사, 경고만 출력
 
@@ -19,31 +19,18 @@ MODE="manual"
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IGNORE_FILE="${PLUGIN_DIR}/.spell-check-ignore"
 
-TMP_DIR=""
-trap '[[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"' EXIT
-
-# hook 모드: stdin JSON에서 대상 경로와 저장될 내용을 추출
-DISPLAY_PATH=""
+# hook 모드: stdin JSON에서 대상 경로만 추출 — 두 모드 모두 저장이 이미 끝난 뒤 실행되므로
+# 디스크의 실제 파일 전체를 검사 (Edit의 new_string 조각이 아님, 라인 번호도 실제 파일 기준)
 if [[ -z "$FILE" ]]; then
   input="$(cat)"
   MODE="$(jq -r '.hook_event_name // "PostToolUse"' <<<"$input")"
   # hook 실행 기록 — 플러그인이 실제로 돌았는지 확인용 (tail -f 로 관찰)
   echo "$(date '+%Y-%m-%d %H:%M:%S') [$MODE] $(jq -r '.file_path // .tool_input.file_path // "(no path)"' <<<"$input")" \
     >> "${SPELL_CHECK_LOG_FILE:-$HOME/.claude/spell-check-plugin.log}"
-  if [[ "$MODE" == "FileChanged" ]]; then
-    # FileChanged: 파일이 이미 디스크에 있으므로 경로만 꺼내 그대로 검사
-    FILE="$(jq -r '.file_path // empty' <<<"$input")"
-    [[ -n "$FILE" && -f "$FILE" ]] || exit 0
-  else
-    DISPLAY_PATH="$(jq -r '.tool_input.file_path // empty' <<<"$input")"
-    content="$(jq -r '.tool_input.content // .tool_input.new_string // empty' <<<"$input")"
-    [[ -n "$DISPLAY_PATH" && -n "$content" ]] || exit 0
-    TMP_DIR="$(mktemp -d)"
-    FILE="${TMP_DIR}/$(basename "$DISPLAY_PATH")"
-    printf '%s\n' "$content" > "$FILE"
-  fi
+  FILE="$(jq -r '.file_path // .tool_input.file_path // empty' <<<"$input")"
+  [[ -n "$FILE" && -f "$FILE" ]] || exit 0
 fi
-DISPLAY_PATH="${DISPLAY_PATH:-$FILE}"
+DISPLAY_PATH="$FILE"
 
 # 무시할 파일 패턴
 IGNORE_PATTERNS=(
