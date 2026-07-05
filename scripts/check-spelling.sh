@@ -1,27 +1,34 @@
 #!/usr/bin/env bash
-# ponytail: macOS 기본 /bin/bash는 3.2라 mapfile/declare -A(bash 4+)를 지원하지 않음.
+# ponytail: macOS 기본 /bin/bash는 3.2라 declare -A, ${var,,} (bash 4+)를 지원하지 않음.
 # env로 실행해 $PATH의 최신 bash(Homebrew 등)를 사용하도록 함.
 set -euo pipefail
 
 # spell-check hook — 저장을 막지 않고 사후에 알려줍니다
 # 프로젝트에서 허용하는 단어는 루트의 .spell-check-ignore (한 줄에 한 단어)에서 가져옵니다
 #
-# 실행 모드 세 가지:
+# 검사 엔진: cspell — 전체 영어 사전 기반, discoint 같은 임의의 오타도 사전에 없는
+# 단어로 감지. camelCase/snake_case 분리 내장, 한글은 건너뜀. 전역 cspell이 없으면
+# npm으로 플러그인 디렉토리에 최초 1회 자동 설치 (전역 오염 없음, Node 18+ 필요).
+# cspell 확보 실패(npm 없음 등) 시에는 검사를 건너뜀 — 저장을 막지 않는 도구이므로.
+#
+# 실행 모드 네 가지:
 #   1) 인자 모드:  check-spelling.sh <파일경로>  — 수동 실행/테스트용, 디스크의 파일을 검사
 #   2) PostToolUse hook 모드: Claude가 Write/Edit로 저장한 직후 — 저장은 이미 완료됐으므로
 #      stdin JSON의 tool_input.file_path로 디스크의 파일 "전체"를 검사하고, 오타가 있으면
 #      exit 2 + stderr로 Claude에게 피드백 (차단 아님, Claude가 다음 수정에서 교정)
 #   3) FileChanged hook 모드: 사용자가 에디터에서 저장하는 등 디스크의 파일이 변경된 뒤 —
 #      stdin JSON의 file_path로 디스크 파일을 검사, 경고만 출력
+#   4) --warm (SessionStart hook): 검사 없이 cspell만 미리 설치 — 첫 저장 검사가 느려지지 않게 함
 
 FILE="${1:-}"
 MODE="manual"
+[[ "$FILE" == "--warm" ]] && { MODE="warm"; FILE=""; }
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IGNORE_FILE="${PLUGIN_DIR}/.spell-check-ignore"
 
 # hook 모드: stdin JSON에서 대상 경로만 추출 — 두 모드 모두 저장이 이미 끝난 뒤 실행되므로
 # 디스크의 실제 파일 전체를 검사 (Edit의 new_string 조각이 아님, 라인 번호도 실제 파일 기준)
-if [[ -z "$FILE" ]]; then
+if [[ -z "$FILE" && "$MODE" != "warm" ]]; then
   input="$(cat)"
   MODE="$(jq -r '.hook_event_name // "PostToolUse"' <<<"$input")"
   # hook 실행 기록 — 플러그인이 실제로 돌았는지 확인용 (tail -f 로 관찰)
@@ -70,62 +77,71 @@ load_ignore_words() {
   grep -vE '^[[:space:]]*(#|$)' "$ignore_file" || true
 }
 
-# 오타 검사 (기본 패턴)
+# cspell 확보: 전역 → 플러그인 지역 설치본 → 없으면 최초 1회 자동 설치
+# 성공 시 CSPELL에 실행 경로를 담고 0 반환, 실패 시 1 (호출부가 검사를 건너뜀)
+CSPELL="$PLUGIN_DIR/node_modules/.bin/cspell"
+ensure_cspell() {
+  command -v cspell >/dev/null 2>&1 && { CSPELL="cspell"; return 0; }
+  [[ -x "$CSPELL" ]] && return 0
+  command -v npm >/dev/null 2>&1 || return 1
+  # ponytail: 동시 저장으로 npm install이 겹치면 한쪽이 실패할 수 있음 — 그 회차만
+  # 검사를 건너뛰고 다음 검사부터 설치본을 쓰므로 lock 없이 둠
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [install] cspell@8 → $PLUGIN_DIR" \
+    >> "${SPELL_CHECK_LOG_FILE:-$HOME/.claude/spell-check-plugin.log}"
+  npm install --prefix "$PLUGIN_DIR" --no-save cspell@8 >/dev/null 2>&1 || return 1
+  [[ -x "$CSPELL" ]]
+}
+
+# 오타 검사 (전체 영어 사전 기반, 사전에 없는 단어를 전부 감지)
 check_spelling() {
   local file="$1"
   local errors=0
 
-  local ignore_words=()
-  mapfile -t ignore_words < <(load_ignore_words "$IGNORE_FILE")
+  local ignore_words
+  ignore_words="$(load_ignore_words "$IGNORE_FILE")"
 
-  # 간단한 오타 패턴 (실제로는 Claude가 더 정교하게 감지)
-  declare -A common_errors=(
-    ["recieve"]="receive"
-    ["occured"]="occurred"
-    ["seperator"]="separator"
-    ["neccessary"]="necessary"
-    ["definately"]="definitely"
-    ["accomodate"]="accommodate"
-    ["untill"]="until"
-    ["wich"]="which"
-    ["dont"]="don't"
-    ["doesnt"]="doesn't"
-    ["cant"]="can't"
-    ["wont"]="won't"
-  )
+  declare -A seen=()
+  local line lnum word fix
+  while IFS= read -r line; do
+    # cspell 출력 형식: path:LINE:COL - Unknown word (WORD) fix: (FIX)
+    lnum="$(cut -d: -f2 <<<"$line")"
+    word="$(sed -E 's/.*Unknown word \(([^)]*)\).*/\1/' <<<"$line")"
+    fix="$(sed -nE 's/.* fix: \(([^)]*)\).*/\1/p' <<<"$line")"
 
-  # 토큰화: camelCase/PascalCase 경계와 snake_case의 _ 에 공백을 삽입해
-  # 식별자 내부 단어(getSeperator → get Seperator)도 단어 경계 grep에 걸리게 함.
-  # 공백만 삽입하므로 라인 번호는 원본과 동일하게 유지됨.
-  local tokenized
-  tokenized="$(sed -E 's/([a-z0-9])([A-Z])/\1 \2/g; s/([A-Z])([A-Z][a-z])/\1 \2/g; s/_/ /g' "$file")"
+    # .spell-check-ignore의 허용 단어와 같은 단어의 중복 보고는 제외
+    grep -qixF "$word" <<<"$ignore_words" && continue
+    [[ -n "${seen[${word,,}]:-}" ]] && continue
+    seen[${word,,}]=1
 
-  # 각 오류 패턴 검사 (파일 전체 소스 대상, 단어 경계 기준)
-  for error in "${!common_errors[@]}"; do
-    correct="${common_errors[$error]}"
-
-    local line_num
-    line_num=$(grep -inw "$error" <<<"$tokenized" | cut -d: -f1 | head -1)
-    [[ -n "$line_num" ]] || continue
-
-    # ignore 목록 확인 (.spell-check-ignore)
-    local should_ignore=false
-    for ignore_word in "${ignore_words[@]}"; do
-      [[ "${error,,}" == "${ignore_word,,}" ]] && should_ignore=true && break
-    done
-
-    if [[ "$should_ignore" == false ]]; then
-      echo "  Line $line_num: '$error' → should be '$correct'"
-      ((errors++))
+    if [[ -n "$fix" ]]; then
+      echo "  Line $lnum: '$word' → should be '$fix'"
+    else
+      echo "  Line $lnum: '$word' → unknown word (오타가 아니면 .spell-check-ignore에 추가)"
     fi
-  done
+    ((errors++))
+  # cspell은 cwd 밖의 파일을 검사에서 제외하므로 파일이 있는 디렉토리에서 실행
+  # (파일 근처에 프로젝트 자체 cspell 설정이 있으면 함께 적용됨)
+  done < <(cd "$(dirname "$file")" && "$CSPELL" lint --no-progress --no-summary "$(basename "$file")" 2>/dev/null || true)
 
-  return $errors
+  # bash 반환 코드는 최대 255 — 오타가 정확히 256개면 0으로 래핑되어 통과로 오판하므로 클램프
+  return $(( errors > 255 ? 255 : errors ))
 }
 
 # 메인 실행
 main() {
+  # SessionStart(--warm): 검사 없이 cspell만 미리 확보하고 종료
+  # (실패해도 조용히 — 검사 시점에 ensure_cspell이 재시도함)
+  if [[ "$MODE" == "warm" ]]; then
+    ensure_cspell || true
+    exit 0
+  fi
+
   if ! should_check_file "$DISPLAY_PATH"; then
+    exit 0
+  fi
+
+  if ! ensure_cspell; then
+    echo "⚠️ cspell을 확보하지 못해 검사를 건너뜁니다 (npm 필요)"
     exit 0
   fi
 

@@ -99,17 +99,18 @@ Apply changes? (y/n): y
 
 ```mermaid
 flowchart TD
+    A0[Claude Code 세션 시작<br/>SessionStart: --warm] --> W[cspell 미리 설치<br/>검사는 하지 않음 — exit 0]
     A1[Claude가 파일 저장<br/>PostToolUse: Write·Edit] --> B[check-spelling.sh 실행]
     A2[사용자가 에디터에서 저장<br/>FileChanged: ts/js/md/json] --> B
     B --> LOG[실행 로그 기록<br/>~/.claude/spell-check-plugin.log]
-    LOG --> C[stdin JSON의 file_path로<br/>디스크 파일 전체를 검사<br/>PostToolUse도 Edit 조각이 아닌 파일 전체]
+    LOG --> C[stdin JSON에서 file_path 추출<br/>PostToolUse도 Edit 조각이 아닌<br/>디스크 파일 전체가 검사 대상]
     C --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외<br/>경로 없거나 파일 없으면 종료}
     F -->|아니오| G[exit 0 — 종료]
-    F -->|예| H[파일 전체 소스 검사<br/>코드·문자열·주석 포함]
-    H --> I[.spell-check-ignore<br/>허용 단어 로드]
-    I --> T[토큰화<br/>camelCase·snake_case를<br/>단어 단위로 분리]
-    T --> J[오타 패턴과 대조<br/>recieve, occured, dont 등<br/>단어 경계 기준]
-    J --> K{오타 발견?}
+    F -->|예| E[cspell 확보<br/>전역 → 지역 설치본 → npm 설치<br/>보통 SessionStart에서 미리 설치됨]
+    E -->|확보 실패: npm 없음| G
+    E -->|확보| H[cspell로 파일 전체 검사<br/>영어 사전에 없는 단어 감지<br/>camelCase·snake_case 분리, 한글 무시]
+    H --> I[.spell-check-ignore의<br/>허용 단어 제외]
+    I --> K{오타 발견?}
     K -->|없음| L[✅ No spelling errors<br/>exit 0]
     K -->|있음, PostToolUse| M[⚠️ exit 2 — stderr로 Claude에게 전달<br/>저장은 이미 완료, Claude가 스스로 교정]
     K -->|있음, FileChanged| N[⚠️ 경고만 출력 — exit 0]
@@ -117,15 +118,16 @@ flowchart TD
 
 ---
 
-## 오류 카테고리
+## 검사 엔진 (cspell)
 
-### 즉시 감지 (기본 패턴)
-- **철자**: recieve, occured, seperator
-- **축약형**: dont, doesnt, wont, cant
-- **식별자 내부 오타**: camelCase/snake_case를 토큰화해 분리 검사 (getSeperator → seperator 감지)
+전체 영어 사전 기반의 [cspell](https://cspell.org)을 사용합니다. 전역 cspell이 없으면 **세션 시작 시(SessionStart hook)** npm으로 플러그인 디렉토리에 미리 자동 설치됩니다 (Node 18+, 전역 오염 없음) — 첫 저장 검사가 느려지지 않습니다. 설치 전에 검사가 먼저 실행되면 그 시점에 설치하고, npm이 없는 환경에서는 검사를 건너뜁니다.
+
+- **임의의 오타 감지**: 알려진 오타 목록이 아니라 사전에 없는 모든 단어를 감지 (discoint, modifed, recieve 등)
+- **식별자 내부 오타**: camelCase/snake_case 분리 내장 (getSeperator → Seperator 감지)
+- **한글 무시**: 한글 주석·문자열은 검사하지 않음
+- **오탐 관리**: 도메인 단어(제품명·약어 등)가 오탐되면 `.spell-check-ignore`에 추가
 
 ### Claude 모델 활용 (더 정교함)
-- **목록에 없는 오타**: 패턴 목록에 없는 미등록 오타 감지 (modifedDate → modifiedDate)
 - **대소문자 일관성**: ModifiedDate vs modifiedDate 혼용 감지
 - **표기 일관성**: dataBase vs database 혼용 감지
 

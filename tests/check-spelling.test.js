@@ -11,6 +11,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'spell-check-test-'));
 process.on('exit', () => fs.rmSync(tmp, { recursive: true, force: true }));
 
 // 인자 모드: check-spelling.sh <파일경로>
+// (cspell이 없으면 스크립트가 최초 1회 자동 설치하므로 첫 실행은 느릴 수 있음)
 function runFile(file, env = {}) {
   return spawnSync(script, [file], {
     env: { ...process.env, ...env },
@@ -91,12 +92,17 @@ r = runFile(writeTmp('code-only.js', 'const msg = "recieve the data";\n'));
 assert.equal(r.status, 0, r.stderr);
 assert.match(r.stdout, /should be 'receive'/);
 
-// 10-1. 식별자 내부 오타도 토큰화(camelCase/snake_case 분리)로 잡아야 한다
+// 10-1. 식별자 내부 오타도 camelCase/snake_case 분리로 잡아야 한다
 r = runFile(writeTmp('identifier.js', 'function getSeperator() {}\nconst dont_flag = 1;\n'));
 assert.equal(r.status, 0, r.stderr);
-assert.match(r.stdout, /should be 'separator'/);
+assert.match(r.stdout, /should be 'Separator'/);
 // dont는 .spell-check-ignore에 등록되어 있어 snake_case 분리 후에도 오탐하지 않아야 한다
-assert.doesNotMatch(r.stdout, /don't/);
+assert.doesNotMatch(r.stdout, /'dont'/);
+
+// 10-2. 사전 기반 검사 — 알려진 오타 목록에 없는 임의의 오타(discoint)도 잡아야 한다
+r = runFile(writeTmp('unknown-word.tsx', "const el = cx('discoint_price');\n"));
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /'discoint'/);
 
 // 11. FileChanged hook 모드: 사용자가 에디터에서 저장한 디스크 파일을 검사해야 한다
 r = spawnSync(script, [], {
@@ -111,5 +117,21 @@ assert.match(r.stdout, /should be 'receive'/);
 const logContent = fs.readFileSync(hookLog, 'utf8');
 assert.match(logContent, /\[PostToolUse\] .*hook-bad\.js/);
 assert.match(logContent, /\[FileChanged\] .*changed\.js/);
+
+// 12-1. 고유 오타가 256개여도 통과로 오판하지 않아야 한다
+//       (오타 개수를 함수 반환 코드로 전달하는데 bash 반환 코드는 256에서 0으로 래핑됨)
+const manyWords = [];
+const alpha = 'abcdefghijklmnopqrstuvwxyz';
+outer: for (const x of alpha) for (const y of alpha) { manyWords.push(`zq${x}${y}vex`); if (manyWords.length === 256) break outer; }
+r = runFile(writeTmp('many-typos.md', manyWords.join(' ') + '\n'));
+assert.equal(r.status, 0, r.stderr);
+assert.match(r.stdout, /Found \d+ potential spelling issues/);
+assert.doesNotMatch(r.stdout, /No spelling errors found/);
+
+// 13. --warm (SessionStart hook): 검사 없이 cspell만 확보하고 조용히 종료해야 한다
+r = spawnSync(script, ['--warm'], { env: { ...process.env, SPELL_CHECK_LOG_FILE: hookLog }, encoding: 'utf8' });
+assert.equal(r.status, 0, r.stderr);
+assert.equal(r.stdout, '');
+assert.ok(fs.existsSync(path.join(root, 'node_modules', '.bin', 'cspell')), 'cspell not installed by --warm');
 
 console.log('all check-spelling tests passed');

@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/check-spelling.sh --warm",
+            "timeout": 120,
+            "statusMessage": "Preparing spell checker..."
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -7,7 +19,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/check-spelling.sh",
-            "timeout": 30,
+            "timeout": 120,
             "statusMessage": "Checking spelling..."
           }
         ]
@@ -20,7 +32,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/check-spelling.sh",
-            "timeout": 30,
+            "timeout": 120,
             "statusMessage": "Checking spelling..."
           }
         ]

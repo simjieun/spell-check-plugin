@@ -35,11 +35,13 @@ README에 추가:
 
 ## 5. 배포 ✅
 - [ ] GitHub에 푸시
+- [ ] `claude plugin tag --push` — 공식 규칙(`spell-check--v{version}`)으로 릴리스 태깅.
+      다른 플러그인이 이 플러그인을 버전 제약(`dependencies`)으로 참조할 수 있게 됨
 - [ ] 팀 메일링으로 설치 가이드 발송
 - [ ] 팀원들이 설치 후 피드백
 
 ```bash
-# 팀원들을 위한 설치 명령어
+# 팀원들을 위한 설치 명령어 (검사 엔진 cspell은 최초 실행 시 자동 설치됨)
 /plugin marketplace add simjieun/spell-check-plugin
 /plugin install spell-check@team-tools
 ```
