@@ -48,7 +48,7 @@ claude --plugin-dir .
 1️⃣ 개발자: src/api.ts 파일 저장
    └─ "// recieve the message from user"
 
-2️⃣ 저장 완료 직후 Hook 자동 실행 (PostToolUse: Write|Edit / FileChanged)
+2️⃣ 저장 완료 직후 Hook 자동 실행 (PostToolUse: Write|Edit)
    ├─ scripts/check-spelling.sh 실행 — 저장은 막지 않음
    ├─ "recieve" 패턴 감지
    └─ 터미널 출력:

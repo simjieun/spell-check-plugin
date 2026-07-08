@@ -11,14 +11,12 @@ set -euo pipefail
 # npm으로 플러그인 디렉토리에 최초 1회 자동 설치 (전역 오염 없음, Node 18+ 필요).
 # cspell 확보 실패(npm 없음 등) 시에는 검사를 건너뜀 — 저장을 막지 않는 도구이므로.
 #
-# 실행 모드 네 가지:
+# 실행 모드 세 가지:
 #   1) 인자 모드:  check-spelling.sh <파일경로>  — 수동 실행/테스트용, 디스크의 파일을 검사
 #   2) PostToolUse hook 모드: Claude가 Write/Edit로 저장한 직후 — 저장은 이미 완료됐으므로
 #      stdin JSON의 tool_input.file_path로 디스크의 파일 "전체"를 검사하고, 오타가 있으면
 #      exit 2 + stderr로 Claude에게 피드백 (차단 아님, Claude가 다음 수정에서 교정)
-#   3) FileChanged hook 모드: 사용자가 에디터에서 저장하는 등 디스크의 파일이 변경된 뒤 —
-#      stdin JSON의 file_path로 디스크 파일을 검사, 경고만 출력
-#   4) --warm (SessionStart hook): 검사 없이 cspell만 미리 설치 — 첫 저장 검사가 느려지지 않게 함
+#   3) --warm (SessionStart hook): 검사 없이 cspell만 미리 설치 — 첫 저장 검사가 느려지지 않게 함
 
 FILE="${1:-}"
 MODE="manual"
@@ -26,7 +24,7 @@ MODE="manual"
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IGNORE_FILE="${PLUGIN_DIR}/.spell-check-ignore"
 
-# hook 모드: stdin JSON에서 대상 경로만 추출 — 두 모드 모두 저장이 이미 끝난 뒤 실행되므로
+# hook 모드: stdin JSON에서 대상 경로만 추출 — 저장이 이미 끝난 뒤 실행되므로
 # 디스크의 실제 파일 전체를 검사 (Edit의 new_string 조각이 아님, 라인 번호도 실제 파일 기준)
 if [[ -z "$FILE" && "$MODE" != "warm" ]]; then
   input="$(cat)"

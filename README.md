@@ -99,21 +99,63 @@ Apply changes? (y/n): y
 
 ```mermaid
 flowchart TD
-    A0[Claude Code 세션 시작<br/>SessionStart: --warm] --> W[cspell 미리 설치<br/>검사는 하지 않음 — exit 0]
-    A1[Claude가 파일 저장<br/>PostToolUse: Write·Edit] --> B[check-spelling.sh 실행]
-    A2[사용자가 에디터에서 저장<br/>FileChanged: ts/js/md/json] --> B
-    B --> LOG[실행 로그 기록<br/>~/.claude/spell-check-plugin.log]
-    LOG --> C[stdin JSON에서 file_path 추출<br/>PostToolUse도 Edit 조각이 아닌<br/>디스크 파일 전체가 검사 대상]
-    C --> F{검사 대상 파일인가?<br/>확장자 ts/js/md/json<br/>+ node_modules 등 제외<br/>경로 없거나 파일 없으면 종료}
-    F -->|아니오| G[exit 0 — 종료]
-    F -->|예| E[cspell 확보<br/>전역 → 지역 설치본 → npm 설치<br/>보통 SessionStart에서 미리 설치됨]
-    E -->|확보 실패: npm 없음| G
-    E -->|확보| H[cspell로 파일 전체 검사<br/>영어 사전에 없는 단어 감지<br/>camelCase·snake_case 분리, 한글 무시]
-    H --> I[.spell-check-ignore의<br/>허용 단어 제외]
-    I --> K{오타 발견?}
-    K -->|없음| L[✅ No spelling errors<br/>exit 0]
-    K -->|있음, PostToolUse| M[⚠️ exit 2 — stderr로 Claude에게 전달<br/>저장은 이미 완료, Claude가 스스로 교정]
-    K -->|있음, FileChanged| N[⚠️ 경고만 출력 — exit 0]
+    A0[SessionStart<br/>--warm] --> W["ensure_cspell 시도<br/>(3단계, 아래 ensure_cspell과 동일)<br/>성공/실패 무관"]
+    W --> EXIT_W[exit 0 — 검사는 하지 않음]
+
+    A1[PostToolUse<br/>Write·Edit 직후] --> HIN
+    A3[수동 실행<br/>check-spelling.sh 파일경로] --> SCF
+
+    subgraph HOOK["hook 모드: stdin 파싱"]
+        HIN[stdin JSON 전체 읽기] --> MODE_SET["hook_event_name → MODE<br/>(없으면 PostToolUse)"]
+        MODE_SET --> LOG[실행 로그 기록<br/>~/.claude/spell-check-plugin.log<br/>또는 $SPELL_CHECK_LOG_FILE]
+        LOG --> EXTRACT["file_path ?? tool_input.file_path<br/>→ FILE"]
+        EXTRACT --> FILE_CHK{FILE 있고<br/>디스크에 실존?}
+        FILE_CHK -->|아니오| EXIT_A[exit 0 — 조용히 종료]
+    end
+    FILE_CHK -->|예| SCF
+
+    subgraph FILTER[should_check_file]
+        SCF{제외 경로?<br/>node_modules·.git·dist·build<br/>.next·coverage·mockData·*.min.js} -->|예| EXIT_B[exit 0]
+        SCF -->|아니오| EXT{지원 확장자?<br/>.ts .tsx .js .jsx .md .json}
+        EXT -->|아니오| EXIT_B
+    end
+    EXT -->|예| G1
+
+    subgraph ENSURE[ensure_cspell]
+        G1{전역 cspell<br/>명령 존재?} -->|예| USE[CSPELL 확보]
+        G1 -->|아니오| G2{플러그인 로컬<br/>node_modules/.bin/cspell<br/>실행 가능?}
+        G2 -->|예| USE
+        G2 -->|아니오| G3{npm 존재?}
+        G3 -->|아니오| FAIL[확보 실패]
+        G3 -->|예| INSTALL["npm install --prefix PLUGIN_DIR<br/>--no-save cspell@8<br/>(설치 시도 로그 기록)"]
+        INSTALL --> G4{설치 성공?}
+        G4 -->|아니오| FAIL
+        G4 -->|예| USE
+    end
+
+    FAIL --> WARN["⚠️ cspell을 확보하지 못해<br/>검사를 건너뜁니다 (npm 필요)"] --> EXIT_C[exit 0]
+    USE --> PRINT["🔍 Checking spelling in: FILE"]
+
+    subgraph CHECK[check_spelling]
+        PRINT --> LOAD_IGNORE[".spell-check-ignore 로드<br/># 주석·빈 줄 무시"]
+        LOAD_IGNORE --> LINT["cd dirname(file) 후<br/>cspell lint --no-progress<br/>--no-summary basename(file)"]
+        LINT --> LOOP{출력 줄마다 반복}
+        LOOP --> PARSE["line·word·fix 파싱<br/>(Unknown word / fix 패턴)"]
+        PARSE --> IGN{.spell-check-ignore에<br/>있는 단어?}
+        IGN -->|예| LOOP
+        IGN -->|아니오| DUP{이미 본 단어?<br/>소문자 기준 중복}
+        DUP -->|예| LOOP
+        DUP -->|아니오| REPORT["출력: Line N 'word' → 'fix'<br/>(fix 없으면 unknown word)<br/>errors++"]
+        REPORT --> LOOP
+        LOOP -->|모든 줄 처리 끝| CLAMP["errors를 255로 클램프<br/>(bash 반환값 wraparound 방지)"]
+    end
+
+    CLAMP --> ERR_CHECK{errors == 0?}
+    ERR_CHECK -->|예| OK["✅ No spelling errors found<br/>exit 0"]
+    ERR_CHECK -->|아니오| ISSUES[이슈 목록 + 요약 출력]
+    ISSUES --> MODE_CHECK{MODE?}
+    MODE_CHECK -->|PostToolUse| POST["stderr에도 동일 내용 출력<br/>exit 2 → Claude에게 피드백<br/>(저장은 이미 완료, 차단 아님)"]
+    MODE_CHECK -->|manual| WARN2["⚠️ 경고만 출력<br/>exit 0"]
 ```
 
 ---
@@ -160,7 +202,6 @@ hook이 트리거될 때마다 실행 로그가 남습니다:
 ```bash
 tail -f ~/.claude/spell-check-plugin.log
 # 2026-07-02 14:30:12 [PostToolUse] src/api.ts
-# 2026-07-02 14:31:05 [FileChanged] src/constants.ts
 ```
 경로를 바꾸려면 `SPELL_CHECK_LOG_FILE` 환경 변수를 설정하세요.
 
